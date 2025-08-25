@@ -1,0 +1,37 @@
+{
+  "audio": {
+    "device": "MOTU M2",
+    "sample_rate": 16000,
+    "channels": 1,
+    "buffer_size_ms": 30
+  },
+  "stt": {
+    "model": "models/ggml-base.en.bin",
+    "language": "en",
+    "auto_detect": false,
+    "beam_size": 5,
+    "n_threads": 4,
+    "use_gpu": true,
+    "context_window_sec": 3.0,
+    "step_sec": 0.5
+  },
+  "vad": {
+    "enabled": true,
+    "energy_threshold": 0.01,
+    "speech_start_ms": 200,
+    "speech_end_ms": 500,
+    "min_speech_ms": 100,
+    "use_adaptive": true
+  },
+  "server": {
+    "socket_path": "/tmp/rt-stt.sock",
+    "stream_socket_path": "/tmp/rt-stt-stream.sock",
+    "max_clients": 10,
+    "buffer_size": 4096
+  },
+  "performance": {
+    "measure_metrics": true,
+    "log_level": "info",
+    "max_queue_size": 100
+  }
+}

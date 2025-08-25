@@ -1,0 +1,26 @@
+#!/bin/bash
+
+echo "RT-STT VAD Debug Test"
+echo "===================="
+echo ""
+echo "This will show VAD debug info to understand why transcriptions aren't happening"
+echo ""
+echo "Current VAD settings:"
+echo "- Energy threshold: 0.003"
+echo "- Speech start threshold: 2.0x noise floor"
+echo "- Speech end threshold: 1.2x noise floor"
+echo "- Speech end delay: 800ms"
+echo ""
+echo "Expected behavior:"
+echo "1. Speak clearly"
+echo "2. Stop speaking"
+echo "3. Wait ~0.8 seconds"
+echo "4. Should see 'Processing utterance: X.X seconds'"
+echo "5. Then see transcription"
+echo ""
+echo "If you see 'Speech buffer: X.X seconds' growing but no 'Processing utterance',"
+echo "it means VAD never reached SILENCE state for 800ms."
+echo ""
+
+# Run with base model for faster testing
+./build/rt-stt-test --model models/ggml-base.en.bin "$@"
