@@ -30,6 +30,9 @@ struct AudioCapture::Impl {
     size_t write_pos = 0;
     size_t read_pos = 0;
     std::mutex buffer_mutex;
+    
+    // Actual channel count being captured
+    int actual_channels = 1;
 };
 
 // Platform-specific audio callback for Core Audio
@@ -45,11 +48,12 @@ OSStatus CoreAudioCallback(
     AudioCapture* capture = static_cast<AudioCapture*>(inRefCon);
     
     // Allocate buffer list for input
+    int channel_count = capture->impl_->actual_channels;
     AudioBufferList* bufferList = (AudioBufferList*)malloc(
-        sizeof(AudioBufferList) + sizeof(AudioBuffer) * (capture->get_config().channels - 1)
+        sizeof(AudioBufferList) + sizeof(AudioBuffer) * (channel_count - 1)
     );
     
-    bufferList->mNumberBuffers = capture->get_config().channels;
+    bufferList->mNumberBuffers = channel_count;
     for (UInt32 i = 0; i < bufferList->mNumberBuffers; ++i) {
         bufferList->mBuffers[i].mNumberChannels = 1;
         bufferList->mBuffers[i].mDataByteSize = inNumberFrames * sizeof(float);
@@ -70,12 +74,25 @@ OSStatus CoreAudioCallback(
         // Convert to mono if needed and process
         std::vector<float> mono_buffer(inNumberFrames);
         
-        if (capture->get_config().channels == 1) {
+        if (capture->get_config().force_single_channel) {
+            // Use only the specified input channel
+            UInt32 channel_idx = capture->get_config().input_channel_index;
+            if (channel_idx < bufferList->mNumberBuffers) {
+                memcpy(mono_buffer.data(), bufferList->mBuffers[channel_idx].mData, 
+                       inNumberFrames * sizeof(float));
+            } else {
+                // Fallback to first channel if specified channel doesn't exist
+                std::cerr << "Warning: Requested channel " << channel_idx 
+                         << " not available, using channel 0" << std::endl;
+                memcpy(mono_buffer.data(), bufferList->mBuffers[0].mData, 
+                       inNumberFrames * sizeof(float));
+            }
+        } else if (capture->get_config().channels == 1 && bufferList->mNumberBuffers == 1) {
             // Already mono
             memcpy(mono_buffer.data(), bufferList->mBuffers[0].mData, 
                    inNumberFrames * sizeof(float));
         } else {
-            // Mix down to mono
+            // Mix all channels to mono
             for (UInt32 frame = 0; frame < inNumberFrames; ++frame) {
                 float sum = 0.0f;
                 for (UInt32 ch = 0; ch < bufferList->mNumberBuffers; ++ch) {
@@ -170,7 +187,28 @@ static AudioDeviceID FindAudioDevice(const std::string& device_name) {
 static void MiniaudioCallback(ma_device* device, void* output, const void* input, ma_uint32 frame_count) {
     AudioCapture* capture = static_cast<AudioCapture*>(device->pUserData);
     if (input) {
-        capture->process_audio_callback(static_cast<const float*>(input), frame_count);
+        const float* input_buffer = static_cast<const float*>(input);
+        
+        if (capture->get_config().force_single_channel && device->capture.channels > 1) {
+            // Extract only the specified channel
+            std::vector<float> mono_buffer(frame_count);
+            int channel_idx = capture->get_config().input_channel_index;
+            
+            // Ensure channel index is valid
+            if (channel_idx >= device->capture.channels) {
+                channel_idx = 0; // Fallback to first channel
+            }
+            
+            // Extract single channel (interleaved audio format)
+            for (ma_uint32 i = 0; i < frame_count; ++i) {
+                mono_buffer[i] = input_buffer[i * device->capture.channels + channel_idx];
+            }
+            
+            capture->process_audio_callback(mono_buffer.data(), frame_count);
+        } else {
+            // Pass through as-is (already mono or mixing all channels)
+            capture->process_audio_callback(input_buffer, frame_count);
+        }
     }
 }
 
@@ -269,7 +307,35 @@ bool AudioCapture::initialize_coreaudio() {
     format.mFormatID = kAudioFormatLinearPCM;
     format.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
     format.mFramesPerPacket = 1;
-    format.mChannelsPerFrame = config_.channels;
+    
+    // If forcing single channel, first get the device's actual channel count
+    if (config_.force_single_channel) {
+        // Get device's native format to know how many channels it has
+        AudioObjectPropertyAddress prop_addr = {
+            kAudioDevicePropertyStreamFormat,
+            kAudioDevicePropertyScopeInput,
+            kAudioObjectPropertyElementMain
+        };
+        
+        AudioStreamBasicDescription device_format;
+        UInt32 prop_size = sizeof(device_format);
+        if (AudioObjectGetPropertyData(impl_->device_id, &prop_addr, 0, nullptr,
+                                     &prop_size, &device_format) == noErr) {
+            format.mChannelsPerFrame = device_format.mChannelsPerFrame;
+            impl_->actual_channels = format.mChannelsPerFrame;
+            std::cout << "Device has " << format.mChannelsPerFrame << " input channels" << std::endl;
+            std::cout << "Will use channel " << (config_.input_channel_index + 1) 
+                     << " (Input " << (config_.input_channel_index + 1) << ")" << std::endl;
+        } else {
+            // Fallback to stereo if we can't query
+            format.mChannelsPerFrame = 2;
+            impl_->actual_channels = 2;
+        }
+    } else {
+        format.mChannelsPerFrame = config_.channels;
+        impl_->actual_channels = config_.channels;
+    }
+    
     format.mBitsPerChannel = 32;
     format.mBytesPerPacket = format.mBytesPerFrame = 
         format.mChannelsPerFrame * sizeof(float);
@@ -343,7 +409,12 @@ bool AudioCapture::initialize_miniaudio() {
     
     ma_device_config config = ma_device_config_init(ma_device_type_capture);
     config.capture.format = ma_format_f32;
-    config.capture.channels = config_.channels;
+    // If we're forcing a single channel, capture all channels so we can select from them
+    if (config_.force_single_channel) {
+        config.capture.channels = 0; // 0 means use device's native channel count
+    } else {
+        config.capture.channels = config_.channels;
+    }
     config.sampleRate = config_.sample_rate;
     config.dataCallback = MiniaudioCallback;
     config.pUserData = this;
@@ -374,7 +445,15 @@ bool AudioCapture::initialize_miniaudio() {
         return false;
     }
     
+    // Store actual channel count
+    impl_->actual_channels = impl_->ma_device.capture.channels;
+    
     std::cout << "miniaudio initialized successfully" << std::endl;
+    std::cout << "Device has " << impl_->actual_channels << " input channels" << std::endl;
+    if (config_.force_single_channel) {
+        std::cout << "Will use channel " << (config_.input_channel_index + 1) 
+                 << " (Input " << (config_.input_channel_index + 1) << ")" << std::endl;
+    }
     return true;
 }
 

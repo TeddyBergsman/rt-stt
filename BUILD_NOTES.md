@@ -27,6 +27,19 @@
    - Removed override keyword from non-virtual function
    - Added missing config.cpp to test build
 
+6. **Fixed Pre-Speech Buffer & First Word Detection**
+   - Increased pre-speech buffer to 500ms to capture audio before VAD confirms speech
+   - Pre-speech audio is now prepended when transitioning to SPEECH state
+   - Successfully captures the beginning of utterances (e.g., "Testing")
+   - Added better VAD hysteresis (1.08x/0.85x) to prevent rapid state changes
+   - Increased speech end delay to 1 second for more stable detection
+
+7. **Added Input Channel Selection** (LATEST)
+   - Configured to use only Input 1 from MOTU M2 audio interface
+   - Added `input_channel_index` and `force_single_channel` to CaptureConfig
+   - Core Audio and miniaudio now correctly select only the specified input channel
+   - Prevents mixing of multiple input channels
+
 ## Current Status
 
 ✅ **Working Features:**

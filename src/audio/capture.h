@@ -27,6 +27,8 @@ struct CaptureConfig {
     int buffer_size_ms = 30;
     bool use_callback = true;
     int bit_depth = 32; // float32
+    int input_channel_index = 1; // 0-based index, 0 = Input 1, 1 = Input 2, etc.
+    bool force_single_channel = true; // If true, use only the specified input_channel_index
 };
 
 // Audio device information
