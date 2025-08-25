@@ -4,10 +4,13 @@
 #include "ipc/server.h"
 #include "config/config.h"
 #include <iostream>
+#include <fstream>
 #include <signal.h>
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <nlohmann/json.hpp>
+#include <sys/stat.h>
 
 // Global flag for graceful shutdown
 std::atomic<bool> g_shutdown_requested(false);
@@ -28,8 +31,14 @@ int main(int argc, char* argv[]) {
     std::cout << "==================" << std::endl;
     
     // Parse command line arguments
-    std::string config_file = "/etc/rt-stt/config.json";
+    std::string config_file;
     std::string socket_path = "/tmp/rt-stt.sock";
+    
+    // Default config path
+    std::string home = std::getenv("HOME") ? std::getenv("HOME") : "";
+    if (!home.empty()) {
+        config_file = home + "/Library/Application Support/rt-stt/config.json";
+    }
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -50,33 +59,97 @@ int main(int argc, char* argv[]) {
     // Initialize STT engine
     rt_stt::stt::STTEngine stt_engine;
     rt_stt::stt::STTEngine::Config stt_config;
+    rt_stt::audio::CaptureConfig capture_config;
     
-    // Configure STT
-    stt_config.model_config.model_path = "models/ggml-small.en.bin";  // Default, can be overridden by config
-    stt_config.model_config.language = "en";
-    stt_config.model_config.use_gpu = true;
+    // Load configuration from file if it exists
+    bool config_loaded = false;
+    struct stat buffer;
+    if (!config_file.empty() && stat(config_file.c_str(), &buffer) == 0) {
+        try {
+            std::ifstream config_stream(config_file);
+            nlohmann::json config_json;
+            config_stream >> config_json;
+            
+            // Parse STT configuration
+            if (config_json.contains("stt")) {
+                auto& stt = config_json["stt"];
+                if (stt.contains("model")) {
+                    auto& model = stt["model"];
+                    stt_config.model_config.model_path = model.value("path", "models/ggml-small.en.bin");
+                    stt_config.model_config.language = model.value("language", "en");
+                    stt_config.model_config.use_gpu = model.value("use_gpu", true);
+                    stt_config.model_config.n_threads = model.value("n_threads", 4);
+                    stt_config.model_config.beam_size = model.value("beam_size", 5);
+                    stt_config.model_config.temperature = model.value("temperature", 0.0f);
+                }
+                if (stt.contains("vad")) {
+                    auto& vad = stt["vad"];
+                    stt_config.vad_config.energy_threshold = vad.value("energy_threshold", 0.001f);
+                    stt_config.vad_config.speech_start_ms = vad.value("speech_start_ms", 150);
+                    stt_config.vad_config.speech_end_ms = vad.value("speech_end_ms", 1000);
+                    stt_config.vad_config.min_speech_ms = vad.value("min_speech_ms", 500);
+                    stt_config.vad_config.speech_start_threshold = vad.value("speech_start_threshold", 1.08f);
+                    stt_config.vad_config.speech_end_threshold = vad.value("speech_end_threshold", 0.85f);
+                    stt_config.vad_config.pre_speech_buffer_ms = vad.value("pre_speech_buffer_ms", 500);
+                    stt_config.vad_config.noise_floor_adaptation_rate = vad.value("noise_floor_adaptation_rate", 0.01f);
+                    stt_config.vad_config.use_adaptive_threshold = vad.value("use_adaptive_threshold", true);
+                }
+                if (stt.contains("audio")) {
+                    auto& audio = stt["audio"];
+                    capture_config.device_name = audio.value("device_name", "MOTU M2");
+                    capture_config.sample_rate = audio.value("sample_rate", 16000);
+                    capture_config.channels = audio.value("channels", 1);
+                    capture_config.buffer_size_ms = audio.value("buffer_size_ms", 30);
+                    capture_config.input_channel_index = audio.value("input_channel_index", 1);
+                    capture_config.force_single_channel = audio.value("force_single_channel", true);
+                    capture_config.use_callback = true;
+                }
+            }
+            
+            // Parse IPC configuration
+            if (config_json.contains("ipc")) {
+                auto& ipc = config_json["ipc"];
+                socket_path = ipc.value("socket_path", socket_path);
+            }
+            
+            config_loaded = true;
+            std::cout << "Loaded configuration from: " << config_file << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to load configuration: " << e.what() << std::endl;
+            std::cerr << "Using default configuration" << std::endl;
+        }
+    }
     
-    // Configure VAD with tuned settings
-    stt_config.vad_config.energy_threshold = 0.001f;
-    stt_config.vad_config.speech_start_ms = 150;
-    stt_config.vad_config.speech_end_ms = 1000;
-    stt_config.vad_config.min_speech_ms = 500;
-    stt_config.vad_config.speech_start_threshold = 1.08f;
-    stt_config.vad_config.speech_end_threshold = 0.85f;
-    stt_config.vad_config.pre_speech_buffer_ms = 500;
-    stt_config.vad_config.noise_floor_adaptation_rate = 0.01f;
-    stt_config.vad_config.use_adaptive_threshold = true;
+    // Use default configuration if not loaded from file
+    if (!config_loaded) {
+        // Configure STT with defaults
+        stt_config.model_config.model_path = "models/ggml-small.en.bin";
+        stt_config.model_config.language = "en";
+        stt_config.model_config.use_gpu = true;
+        
+        // Configure VAD with tuned settings
+        stt_config.vad_config.energy_threshold = 0.001f;
+        stt_config.vad_config.speech_start_ms = 150;
+        stt_config.vad_config.speech_end_ms = 1000;
+        stt_config.vad_config.min_speech_ms = 500;
+        stt_config.vad_config.speech_start_threshold = 1.08f;
+        stt_config.vad_config.speech_end_threshold = 0.85f;
+        stt_config.vad_config.pre_speech_buffer_ms = 500;
+        stt_config.vad_config.noise_floor_adaptation_rate = 0.01f;
+        stt_config.vad_config.use_adaptive_threshold = true;
+        
+        // Configure audio capture
+        capture_config.device_name = "MOTU M2";
+        capture_config.sample_rate = 16000;
+        capture_config.channels = 1;
+        capture_config.buffer_size_ms = 30;
+        capture_config.use_callback = true;
+        capture_config.input_channel_index = 1;
+        capture_config.force_single_channel = true;
+    }
     
     // Create audio capture instance
     rt_stt::audio::AudioCapture audio_capture;
-    rt_stt::audio::CaptureConfig capture_config;
-    capture_config.device_name = "MOTU M2";
-    capture_config.sample_rate = 16000;
-    capture_config.channels = 1;
-    capture_config.buffer_size_ms = 30;
-    capture_config.use_callback = true;
-    capture_config.input_channel_index = 1;  // Input 2
-    capture_config.force_single_channel = true;
     
     std::cout << "Initializing audio capture..." << std::endl;
     if (!audio_capture.initialize(capture_config)) {

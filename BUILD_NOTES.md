@@ -48,12 +48,20 @@
    - Thread-safe client management
    - Example Python client included
 
-9. **Fixed IPC Message Delivery** (LATEST)
+9. **Fixed IPC Message Delivery**
    - Fixed message type enum mismatch (TRANSCRIPTION=3, not 4)
    - Corrected JSON framing to exclude newlines from length
    - Added macOS compatibility for socket signals
    - Enhanced debug output for troubleshooting
    - Transcriptions now properly delivered to all clients
+
+10. **Implemented macOS Daemon** (LATEST)
+   - Created LaunchAgent plist for automatic startup
+   - JSON configuration file support
+   - Installation/uninstallation scripts
+   - Control utility (rt-stt-ctl) for easy management
+   - Proper logging to ~/Library/Logs
+   - User-level service (not system daemon) for audio access
 
 ## Current Status
 

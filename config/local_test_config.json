@@ -1,0 +1,48 @@
+{
+  "stt": {
+    "model": {
+      "path": "models/ggml-small.en.bin",
+      "language": "en",
+      "use_gpu": true,
+      "n_threads": 4,
+      "beam_size": 5,
+      "temperature": 0.0
+    },
+    "vad": {
+      "enabled": true,
+      "energy_threshold": 0.001,
+      "speech_start_ms": 150,
+      "speech_end_ms": 1000,
+      "min_speech_ms": 500,
+      "speech_start_threshold": 1.08,
+      "speech_end_threshold": 0.85,
+      "pre_speech_buffer_ms": 500,
+      "noise_floor_adaptation_rate": 0.01,
+      "use_adaptive_threshold": true
+    },
+    "audio": {
+      "device_name": "MOTU M2",
+      "sample_rate": 16000,
+      "channels": 1,
+      "buffer_size_ms": 30,
+      "input_channel_index": 1,
+      "force_single_channel": true
+    }
+  },
+  "ipc": {
+    "socket_path": "/tmp/rt-stt-test.sock",
+    "max_clients": 10,
+    "enable_commands": true
+  },
+  "logging": {
+    "level": "info",
+    "file": "./rt-stt-test.log",
+    "max_size_mb": 100,
+    "max_files": 5
+  },
+  "performance": {
+    "process_priority": -5,
+    "enable_metrics": true,
+    "metrics_interval_sec": 60
+  }
+}
