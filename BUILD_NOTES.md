@@ -34,22 +34,41 @@
    - Added better VAD hysteresis (1.08x/0.85x) to prevent rapid state changes
    - Increased speech end delay to 1 second for more stable detection
 
-7. **Added Input Channel Selection** (LATEST)
-   - Configured to use only Input 1 from MOTU M2 audio interface
+7. **Added Input Channel Selection**
+   - Configured to use only Input 1 from MOTU M2 audio interface (now set to Input 2)
    - Added `input_channel_index` and `force_single_channel` to CaptureConfig
    - Core Audio and miniaudio now correctly select only the specified input channel
    - Prevents mixing of multiple input channels
+
+8. **Implemented IPC Server**
+   - Full Unix domain socket server with multi-client support
+   - JSON-based protocol with message framing
+   - Supports commands: pause/resume, get_status, set_language, etc.
+   - Broadcasts real-time transcriptions to all connected clients
+   - Thread-safe client management
+   - Example Python client included
+
+9. **Fixed IPC Message Delivery** (LATEST)
+   - Fixed message type enum mismatch (TRANSCRIPTION=3, not 4)
+   - Corrected JSON framing to exclude newlines from length
+   - Added macOS compatibility for socket signals
+   - Enhanced debug output for troubleshooting
+   - Transcriptions now properly delivered to all clients
 
 ## Current Status
 
 ✅ **Working Features:**
 - whisper.cpp integration with Metal acceleration
 - Core Audio capture (with miniaudio fallback)
-- Voice Activity Detection (VAD) - Fixed threshold calculation
+- Voice Activity Detection (VAD) with pre-speech buffer
 - Real-time terminal visualization
-- Model loading and initialization
+- Model loading and initialization (small.en for accuracy)
 - Command-line argument parsing
-- Basic speech transcription (needs tuning)
+- High-quality speech transcription with proper sentence boundaries
+- Input channel selection (currently using Input 2)
+- IPC server with Unix domain sockets
+- Multi-client support for real-time transcription streaming
+- JSON-based command protocol
 
 🔧 **Recent Fixes (Nov 2024):**
 - Fixed VAD threshold calculation (was dividing instead of multiplying)
