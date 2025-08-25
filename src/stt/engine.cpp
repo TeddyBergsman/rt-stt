@@ -387,6 +387,35 @@ void STTEngine::set_vad_enabled(bool enabled) {
 
 void STTEngine::update_vad_config(const audio::VADConfig& config) {
     vad_->update_config(config);
+    config_.vad_config = config;
+}
+
+void STTEngine::set_model(const std::string& model_path) {
+    // Stop processing during model switch
+    bool was_running = running_.load();
+    if (was_running) {
+        stop();
+    }
+    
+    // Update config with new model path
+    config_.model_config.model_path = model_path;
+    
+    // Create new whisper instance
+    whisper_ = std::make_unique<WhisperWrapper>();
+    
+    // Initialize with updated config
+    if (!whisper_->initialize(config_.model_config)) {
+        throw std::runtime_error("Failed to load model: " + model_path);
+    }
+    
+    // Restart if was running
+    if (was_running) {
+        start();
+    }
+    
+    if (terminal_output_) {
+        terminal_output_->print_status("Model changed to: " + model_path);
+    }
 }
 
 void STTEngine::update_metrics() {

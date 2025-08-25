@@ -379,6 +379,60 @@ class RTSTTClient:
         """Set VAD sensitivity (e.g., 1.08)"""
         return self._send_command("set_vad_sensitivity", {"sensitivity": sensitivity})
     
+    def get_config(self) -> dict:
+        """Get full daemon configuration"""
+        return self._send_command("get_config")
+    
+    def set_config(self, config: dict, save: bool = True):
+        """Update daemon configuration
+        
+        Args:
+            config: Configuration dictionary (partial updates supported)
+            save: Whether to save to config file
+        """
+        return self._send_command("set_config", {"config": config, "save": save})
+    
+    def get_metrics(self) -> dict:
+        """Get performance metrics"""
+        return self._send_command("get_metrics")
+    
+    def set_vad_config(self, **kwargs):
+        """Update VAD configuration
+        
+        Args:
+            energy_threshold: Energy threshold for speech detection
+            speech_start_ms: Time to confirm speech start
+            speech_end_ms: Time to confirm speech end
+            min_speech_ms: Minimum speech duration
+            pre_speech_buffer_ms: Pre-speech buffer size
+            noise_floor_adaptation_rate: Noise adaptation rate
+            speech_start_threshold: Start threshold multiplier
+            speech_end_threshold: End threshold multiplier
+            use_adaptive_threshold: Enable adaptive thresholding
+        """
+        vad_config = {}
+        for key, value in kwargs.items():
+            vad_config[key] = value
+        
+        return self.set_config({"vad_config": vad_config})
+    
+    def set_model_config(self, **kwargs):
+        """Update model configuration
+        
+        Args:
+            model_path: Path to Whisper model
+            language: Recognition language
+            n_threads: Number of threads
+            use_gpu: Enable GPU acceleration
+            beam_size: Beam search size
+            temperature: Sampling temperature
+        """
+        model_config = {}
+        for key, value in kwargs.items():
+            model_config[key] = value
+        
+        return self.set_config({"model_config": model_config})
+    
     # Callback setters
     
     def on_transcription(self, callback: Callable[[TranscriptionResult], None]):

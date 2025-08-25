@@ -273,6 +273,136 @@ def monitor(args):
     return 0
 
 
+def get_configuration(args):
+    """Get current daemon configuration"""
+    client = RTSTTClient(socket_path=args.socket)
+    
+    try:
+        client.connect()
+        config = client.get_config()
+        
+        if args.json:
+            print(json.dumps(config, indent=2))
+        else:
+            print_colored("RT-STT Configuration", Colors.BOLD)
+            print_colored("=" * 30, Colors.BOLD)
+            print(json.dumps(config, indent=2))
+        
+        client.disconnect()
+        return 0
+        
+    except ConnectionError as e:
+        print_colored(f"Connection error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+    except CommandError as e:
+        print_colored(f"Command error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+
+
+def set_configuration(args):
+    """Update daemon configuration"""
+    client = RTSTTClient(socket_path=args.socket)
+    
+    try:
+        # Parse config JSON
+        try:
+            config = json.loads(args.config_json)
+        except json.JSONDecodeError as e:
+            print_colored(f"Invalid JSON: {e}", Colors.RED, file=sys.stderr)
+            return 1
+        
+        client.connect()
+        result = client.set_config(config, save=not args.no_save)
+        
+        print_colored("Configuration updated successfully", Colors.GREEN)
+        if hasattr(args, 'no_save') and args.no_save:
+            print_colored("(Changes not saved to file)", Colors.YELLOW)
+        
+        client.disconnect()
+        return 0
+        
+    except ConnectionError as e:
+        print_colored(f"Connection error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+    except CommandError as e:
+        print_colored(f"Command error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+
+
+def set_vad_config(args):
+    """Update VAD configuration"""
+    client = RTSTTClient(socket_path=args.socket)
+    
+    try:
+        client.connect()
+        
+        # Build VAD config from arguments
+        vad_config = {}
+        if args.energy_threshold is not None:
+            vad_config['energy_threshold'] = args.energy_threshold
+        if args.speech_start_ms is not None:
+            vad_config['speech_start_ms'] = args.speech_start_ms
+        if args.speech_end_ms is not None:
+            vad_config['speech_end_ms'] = args.speech_end_ms
+        if args.min_speech_ms is not None:
+            vad_config['min_speech_ms'] = args.min_speech_ms
+        if args.start_threshold is not None:
+            vad_config['speech_start_threshold'] = args.start_threshold
+        if args.end_threshold is not None:
+            vad_config['speech_end_threshold'] = args.end_threshold
+        
+        if not vad_config:
+            print_colored("No VAD settings specified", Colors.RED, file=sys.stderr)
+            return 1
+        
+        client.set_vad_config(**vad_config)
+        print_colored("VAD configuration updated", Colors.GREEN)
+        
+        # Show what was updated
+        for key, value in vad_config.items():
+            print(f"  {key}: {value}")
+        
+        client.disconnect()
+        return 0
+        
+    except ConnectionError as e:
+        print_colored(f"Connection error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+    except CommandError as e:
+        print_colored(f"Command error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+
+
+def get_metrics(args):
+    """Get performance metrics"""
+    client = RTSTTClient(socket_path=args.socket)
+    
+    try:
+        client.connect()
+        metrics = client.get_metrics()
+        
+        if args.json:
+            print(json.dumps(metrics, indent=2))
+        else:
+            print_colored("RT-STT Performance Metrics", Colors.BOLD)
+            print_colored("=" * 30, Colors.BOLD)
+            print(f"Average Latency: {metrics.get('avg_latency_ms', 0):.1f} ms")
+            print(f"Average RTF: {metrics.get('avg_rtf', 0):.2f}")
+            print(f"CPU Usage: {metrics.get('cpu_usage', 0):.1f}%")
+            print(f"Memory Usage: {metrics.get('memory_usage_mb', 0)} MB")
+            print(f"Transcriptions: {metrics.get('transcriptions_count', 0)}")
+        
+        client.disconnect()
+        return 0
+        
+    except ConnectionError as e:
+        print_colored(f"Connection error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+    except CommandError as e:
+        print_colored(f"Command error: {e}", Colors.RED, file=sys.stderr)
+        return 1
+
+
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
@@ -334,6 +464,25 @@ Examples:
     # Monitor command
     subparsers.add_parser('monitor', help='Monitor daemon with live stats')
     
+    # Configuration commands
+    get_config_parser = subparsers.add_parser('get-config', help='Get current configuration')
+    get_config_parser.add_argument('-j', '--json', action='store_true', help='Output as JSON')
+    
+    config_parser = subparsers.add_parser('set-config', help='Update configuration')
+    config_parser.add_argument('config_json', help='Configuration JSON')
+    config_parser.add_argument('--no-save', action='store_true', help='Don\'t save to file')
+    
+    vad_parser = subparsers.add_parser('set-vad', help='Update VAD settings')
+    vad_parser.add_argument('--energy-threshold', type=float, help='Energy threshold')
+    vad_parser.add_argument('--speech-start-ms', type=int, help='Speech start time')
+    vad_parser.add_argument('--speech-end-ms', type=int, help='Speech end time')
+    vad_parser.add_argument('--min-speech-ms', type=int, help='Minimum speech duration')
+    vad_parser.add_argument('--start-threshold', type=float, help='Start threshold multiplier')
+    vad_parser.add_argument('--end-threshold', type=float, help='End threshold multiplier')
+    
+    get_metrics_parser = subparsers.add_parser('get-metrics', help='Get performance metrics')
+    get_metrics_parser.add_argument('-j', '--json', action='store_true', help='Output as JSON')
+    
     # Parse arguments
     args = parser.parse_args()
     
@@ -355,6 +504,14 @@ Examples:
         return get_status(args)
     elif args.action == 'monitor':
         return monitor(args)
+    elif args.action == 'get-config':
+        return get_configuration(args)
+    elif args.action == 'set-config':
+        return set_configuration(args)
+    elif args.action == 'set-vad':
+        return set_vad_config(args)
+    elif args.action == 'get-metrics':
+        return get_metrics(args)
     elif args.action in ['pause', 'resume', 'set-language', 'set-model', 'set-vad-sensitivity']:
         args.command = args.action
         return send_command(args)

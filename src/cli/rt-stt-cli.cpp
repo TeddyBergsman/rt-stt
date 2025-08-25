@@ -144,6 +144,56 @@ public:
         return true;
     }
     
+    bool get_config(bool json_output) {
+        if (!send_command("get_config")) {
+            return false;
+        }
+        
+        nlohmann::json response;
+        if (!receive_message(response)) {
+            return false;
+        }
+        
+        if (response["type"] == 6 && response["data"]["success"]) {  // ACKNOWLEDGMENT
+            auto& result = response["data"]["result"];
+            if (json_output) {
+                std::cout << result.dump(2) << std::endl;
+            } else {
+                std::cout << "RT-STT Configuration:" << std::endl;
+                std::cout << result.dump(2) << std::endl;
+            }
+        }
+        
+        return true;
+    }
+    
+    bool get_metrics(bool json_output) {
+        if (!send_command("get_metrics")) {
+            return false;
+        }
+        
+        nlohmann::json response;
+        if (!receive_message(response)) {
+            return false;
+        }
+        
+        if (response["type"] == 6 && response["data"]["success"]) {  // ACKNOWLEDGMENT
+            auto& result = response["data"]["result"];
+            if (json_output) {
+                std::cout << result.dump(2) << std::endl;
+            } else {
+                std::cout << "RT-STT Performance Metrics:" << std::endl;
+                std::cout << "  Average Latency: " << result["avg_latency_ms"].get<float>() << " ms" << std::endl;
+                std::cout << "  Average RTF: " << result["avg_rtf"].get<float>() << std::endl;
+                std::cout << "  CPU Usage: " << result["cpu_usage"].get<float>() << "%" << std::endl;
+                std::cout << "  Memory Usage: " << result["memory_usage_mb"].get<size_t>() << " MB" << std::endl;
+                std::cout << "  Transcriptions: " << result["transcriptions_count"].get<size_t>() << std::endl;
+            }
+        }
+        
+        return true;
+    }
+    
 private:
     std::string socket_path_;
     int socket_fd_;
@@ -197,6 +247,8 @@ void print_usage(const char* program) {
     std::cout << "  pause           Pause listening" << std::endl;
     std::cout << "  resume          Resume listening" << std::endl;
     std::cout << "  set-language    Set recognition language" << std::endl;
+    std::cout << "  get-config      Get current configuration" << std::endl;
+    std::cout << "  get-metrics     Get performance metrics" << std::endl;
     std::cout << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  -s, --socket    Socket path (default: /tmp/rt-stt.sock)" << std::endl;
@@ -211,6 +263,7 @@ void print_usage(const char* program) {
     std::cout << "  " << program << " status               # Check daemon status" << std::endl;
     std::cout << "  " << program << " pause                # Pause listening" << std::endl;
     std::cout << "  " << program << " set-language es      # Set Spanish" << std::endl;
+    std::cout << "  " << program << " get-config -j        # Get config as JSON" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -273,6 +326,10 @@ int main(int argc, char* argv[]) {
         nlohmann::json params = {{"language", args[0]}};
         success = client.send_command("set_language", params);
         if (success) std::cout << "Language set to: " << args[0] << std::endl;
+    } else if (command == "get-config") {
+        success = client.get_config(json_output);
+    } else if (command == "get-metrics") {
+        success = client.get_metrics(json_output);
     } else {
         std::cerr << "Unknown command: " << command << std::endl;
         print_usage(argv[0]);

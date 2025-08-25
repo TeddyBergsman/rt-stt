@@ -396,6 +396,22 @@ void Server::broadcast_status(const nlohmann::json& status) {
     }
 }
 
+void Server::broadcast_transcription_full(const nlohmann::json& transcription_data) {
+    Message msg;
+    msg.type = Message::TRANSCRIPTION;
+    msg.id = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+    msg.data = transcription_data;
+    
+    std::lock_guard<std::mutex> lock(impl_->clients_mutex);
+    for (auto& [fd, client] : impl_->clients) {
+        if (client->subscribed_to_transcriptions) {
+            if (!send_message(fd, msg)) {
+                std::cerr << "Failed to send full transcription to client " << client->id << std::endl;
+            }
+        }
+    }
+}
+
 size_t Server::get_client_count() const {
     std::lock_guard<std::mutex> lock(impl_->clients_mutex);
     return impl_->clients.size();

@@ -61,6 +61,7 @@ public:
     
     // Broadcast transcription to all subscribed clients
     void broadcast_transcription(const std::string& text, float confidence = 1.0f);
+    void broadcast_transcription_full(const nlohmann::json& transcription_data);
     
     // Send status update to all clients
     void broadcast_status(const nlohmann::json& status);

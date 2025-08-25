@@ -52,6 +52,8 @@ public:
     void set_language(const std::string& language);
     void set_vad_enabled(bool enabled);
     void update_vad_config(const audio::VADConfig& config);
+    void set_model(const std::string& model_path);
+    Config get_current_config() const { return config_; }
     
     // Performance metrics
     struct Metrics {

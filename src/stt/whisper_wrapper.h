@@ -21,7 +21,26 @@ struct TranscriptionResult {
     bool is_final;
     std::chrono::milliseconds processing_time;
     std::string language;
+    float language_probability;
     std::vector<std::pair<int64_t, int64_t>> timestamps; // start, end in ms
+    
+    // Additional metadata from Whisper
+    struct Segment {
+        int id;
+        int seek;
+        float start;
+        float end;
+        std::string text;
+        std::vector<int> tokens;
+        float temperature;
+        float avg_logprob;
+        float compression_ratio;
+        float no_speech_prob;
+    };
+    
+    std::vector<Segment> segments;
+    int64_t audio_duration_ms;
+    std::string model_name;
 };
 
 // Model configuration

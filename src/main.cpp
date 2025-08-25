@@ -163,6 +163,40 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    // Keep config path for saving
+    std::string config_path = config_file;
+    
+    // Keep config as mutable JSON for runtime updates
+    nlohmann::json current_config;
+    current_config["model_config"] = {
+        {"model_path", stt_config.model_config.model_path},
+        {"language", stt_config.model_config.language},
+        {"n_threads", stt_config.model_config.n_threads},
+        {"use_gpu", stt_config.model_config.use_gpu},
+        {"beam_size", stt_config.model_config.beam_size},
+        {"temperature", stt_config.model_config.temperature}
+    };
+    current_config["vad_config"] = {
+        {"use_adaptive_threshold", stt_config.vad_config.use_adaptive_threshold},
+        {"energy_threshold", stt_config.vad_config.energy_threshold},
+        {"speech_start_ms", stt_config.vad_config.speech_start_ms},
+        {"speech_end_ms", stt_config.vad_config.speech_end_ms},
+        {"min_speech_ms", stt_config.vad_config.min_speech_ms},
+        {"pre_speech_buffer_ms", stt_config.vad_config.pre_speech_buffer_ms},
+        {"noise_floor_adaptation_rate", stt_config.vad_config.noise_floor_adaptation_rate},
+        {"speech_start_threshold", stt_config.vad_config.speech_start_threshold},
+        {"speech_end_threshold", stt_config.vad_config.speech_end_threshold}
+    };
+    current_config["audio_capture_config"] = {
+        {"device_name", capture_config.device_name},
+        {"sample_rate", capture_config.sample_rate},
+        {"channels", capture_config.channels},
+        {"buffer_size_ms", capture_config.buffer_size_ms},
+        {"force_single_channel", capture_config.force_single_channel},
+        {"input_channel_index", capture_config.input_channel_index}
+    };
+    current_config["ipc_socket_path"] = socket_path;
+    
     // Initialize IPC server
     rt_stt::ipc::Server ipc_server;
     
@@ -178,7 +212,37 @@ int main(int argc, char* argv[]) {
             if (!result.text.empty()) {
                 std::cout << "[TRANSCRIPTION] " << result.text << std::endl;
                 std::cout << "[DEBUG] Broadcasting to IPC clients..." << std::endl;
-                ipc_server.broadcast_transcription(result.text, result.confidence);
+                
+                // Create full JSON with all metadata
+                nlohmann::json transcription_data;
+                transcription_data["text"] = result.text;
+                transcription_data["confidence"] = result.confidence;
+                transcription_data["timestamp"] = std::chrono::system_clock::now().time_since_epoch().count();
+                transcription_data["language"] = result.language;
+                transcription_data["language_probability"] = result.language_probability;
+                transcription_data["processing_time_ms"] = result.processing_time.count();
+                transcription_data["audio_duration_ms"] = result.audio_duration_ms;
+                transcription_data["model"] = result.model_name;
+                transcription_data["is_final"] = result.is_final;
+                
+                // Add segments with full metadata
+                transcription_data["segments"] = nlohmann::json::array();
+                for (const auto& segment : result.segments) {
+                    nlohmann::json seg;
+                    seg["id"] = segment.id;
+                    seg["seek"] = segment.seek;
+                    seg["start"] = segment.start;
+                    seg["end"] = segment.end;
+                    seg["text"] = segment.text;
+                    seg["tokens"] = segment.tokens;
+                    seg["temperature"] = segment.temperature;
+                    seg["avg_logprob"] = segment.avg_logprob;
+                    seg["compression_ratio"] = segment.compression_ratio;
+                    seg["no_speech_prob"] = segment.no_speech_prob;
+                    transcription_data["segments"].push_back(seg);
+                }
+                
+                ipc_server.broadcast_transcription_full(transcription_data);
                 std::cout << "[DEBUG] Broadcast complete. Connected clients: " << ipc_server.get_client_count() << std::endl;
             }
         }
@@ -186,36 +250,115 @@ int main(int argc, char* argv[]) {
     
     // Set up command handler
     ipc_server.set_command_handler(
-        [&stt_engine, &stt_config](const std::string& action, const nlohmann::json& params) -> nlohmann::json {
+        [&stt_engine, &stt_config, &capture_config, &current_config, config_path, &ipc_server](const std::string& action, const nlohmann::json& params) -> nlohmann::json {
             nlohmann::json result;
             
-            if (action == "pause") {
-                stt_engine.pause();
-                result["status"] = "paused";
-                result["listening"] = false;
-            } else if (action == "resume") {
-                stt_engine.resume();
-                result["status"] = "listening";
-                result["listening"] = true;
-            } else if (action == "get_status") {
-                result["listening"] = stt_engine.is_running();
-                result["model"] = stt_config.model_config.model_path;
-                result["language"] = stt_config.model_config.language;
-                result["vad_enabled"] = true;  // Always enabled in current implementation
-            } else if (action == "set_language") {
-                std::string lang = params.value("language", "en");
-                // TODO: Implement language change
-                result["language"] = lang;
-            } else if (action == "set_model") {
-                std::string model = params.value("model", "");
-                // TODO: Implement model change
-                result["model"] = model;
-            } else if (action == "set_vad_sensitivity") {
-                float sensitivity = params.value("sensitivity", 1.08f);
-                // TODO: Implement VAD sensitivity change
-                result["sensitivity"] = sensitivity;
-            } else {
-                throw std::runtime_error("Unknown action: " + action);
+            try {
+                if (action == "pause") {
+                    stt_engine.pause();
+                    result["status"] = "paused";
+                    result["listening"] = false;
+                } else if (action == "resume") {
+                    stt_engine.resume();
+                    result["status"] = "listening";
+                    result["listening"] = true;
+                } else if (action == "get_status") {
+                    result["listening"] = stt_engine.is_running();
+                    result["model"] = stt_config.model_config.model_path;
+                    result["language"] = stt_config.model_config.language;
+                    result["vad_enabled"] = stt_config.vad_config.use_adaptive_threshold;
+                    result["clients"] = ipc_server.get_client_count();
+                } else if (action == "get_config") {
+                    // Return full configuration
+                    result = current_config;
+                } else if (action == "set_config") {
+                    // Update configuration with validation
+                    auto new_config = params.value("config", nlohmann::json::object());
+                    
+                    // Merge with existing config
+                    current_config.merge_patch(new_config);
+                    
+                    // Apply changes
+                    bool needs_restart = false;
+                    
+                    // VAD settings
+                    if (new_config.contains("vad_config")) {
+                        stt_config.vad_config.use_adaptive_threshold = current_config["vad_config"]["use_adaptive_threshold"].get<bool>();
+                        stt_config.vad_config.energy_threshold = current_config["vad_config"]["energy_threshold"].get<float>();
+                        stt_config.vad_config.speech_start_ms = current_config["vad_config"]["speech_start_ms"].get<int>();
+                        stt_config.vad_config.speech_end_ms = current_config["vad_config"]["speech_end_ms"].get<int>();
+                        stt_config.vad_config.min_speech_ms = current_config["vad_config"]["min_speech_ms"].get<int>();
+                        stt_config.vad_config.pre_speech_buffer_ms = current_config["vad_config"]["pre_speech_buffer_ms"].get<int>();
+                        stt_config.vad_config.noise_floor_adaptation_rate = current_config["vad_config"]["noise_floor_adaptation_rate"].get<float>();
+                        stt_config.vad_config.speech_start_threshold = current_config["vad_config"]["speech_start_threshold"].get<float>();
+                        stt_config.vad_config.speech_end_threshold = current_config["vad_config"]["speech_end_threshold"].get<float>();
+                        stt_config.vad_config.use_adaptive_threshold = current_config["vad_config"]["use_adaptive_threshold"].get<bool>();
+                        
+                        stt_engine.update_vad_config(stt_config.vad_config);
+                        result["vad_updated"] = true;
+                    }
+                    
+                    // Model settings
+                    if (new_config.contains("model_config")) {
+                        if (new_config["model_config"].contains("model_path")) {
+                            std::string new_model = current_config["model_config"]["model_path"].get<std::string>();
+                            stt_engine.set_model(new_model);
+                            stt_config.model_config.model_path = new_model;
+                            result["model_updated"] = true;
+                        }
+                        
+                        if (new_config["model_config"].contains("language")) {
+                            std::string new_lang = current_config["model_config"]["language"].get<std::string>();
+                            stt_engine.set_language(new_lang);
+                            stt_config.model_config.language = new_lang;
+                            result["language_updated"] = true;
+                        }
+                    }
+                    
+                    // Save config to file if requested
+                    if (params.value("save", true)) {
+                        std::ofstream config_file(config_path);
+                        if (config_file) {
+                            config_file << current_config.dump(4);
+                            config_file.close();
+                            result["config_saved"] = true;
+                        }
+                    }
+                    
+                    result["success"] = true;
+                } else if (action == "set_language") {
+                    std::string lang = params.value("language", "en");
+                    stt_engine.set_language(lang);
+                    stt_config.model_config.language = lang;
+                        current_config["model_config"]["language"] = lang;
+                    result["language"] = lang;
+                } else if (action == "set_model") {
+                    std::string model = params.value("model", "");
+                    if (!model.empty()) {
+                        stt_engine.set_model(model);
+                        stt_config.model_config.model_path = model;
+                        current_config["model_config"]["model_path"] = model;
+                        result["model"] = model;
+                    }
+                } else if (action == "set_vad_sensitivity") {
+                    float sensitivity = params.value("sensitivity", 1.08f);
+                    stt_config.vad_config.speech_start_threshold = sensitivity;
+                        current_config["vad_config"]["speech_start_threshold"] = sensitivity;
+                    stt_engine.update_vad_config(stt_config.vad_config);
+                    result["sensitivity"] = sensitivity;
+                } else if (action == "get_metrics") {
+                    auto metrics = stt_engine.get_metrics();
+                    result["avg_latency_ms"] = metrics.avg_latency_ms;
+                    result["avg_rtf"] = metrics.avg_rtf;
+                    result["cpu_usage"] = metrics.cpu_usage;
+                    result["memory_usage_mb"] = metrics.memory_usage_mb;
+                    result["transcriptions_count"] = metrics.transcriptions_count;
+                } else {
+                    throw std::runtime_error("Unknown action: " + action);
+                }
+            } catch (const std::exception& e) {
+                result["error"] = e.what();
+                result["success"] = false;
             }
             
             return result;

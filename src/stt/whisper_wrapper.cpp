@@ -208,12 +208,46 @@ TranscriptionResult WhisperWrapper::process_segment(const float* samples, size_t
         if (n_segments > 0) {
             // Concatenate all segments for better results
             result.text = "";
+            
+            // Extract detailed metadata for each segment
             for (int i = 0; i < n_segments; ++i) {
                 const char* text = whisper_full_get_segment_text(impl_->ctx, i);
                 if (text && strlen(text) > 0) {
                     result.text += text;
                 }
+                
+                // Create segment with full metadata
+                TranscriptionResult::Segment segment;
+                segment.id = i;
+                segment.seek = 0;
+                segment.start = whisper_full_get_segment_t0(impl_->ctx, i) / 100.0f; // Convert to seconds
+                segment.end = whisper_full_get_segment_t1(impl_->ctx, i) / 100.0f;
+                segment.text = text ? text : "";
+                
+                // Get tokens for this segment
+                const int n_tokens = whisper_full_n_tokens(impl_->ctx, i);
+                for (int j = 0; j < n_tokens; ++j) {
+                    segment.tokens.push_back(whisper_full_get_token_id(impl_->ctx, i, j));
+                }
+                
+                // Calculate average log probability
+                segment.avg_logprob = 0.0f;
+                if (n_tokens > 0) {
+                    float sum_logprob = 0.0f;
+                    for (int j = 0; j < n_tokens; ++j) {
+                        sum_logprob += whisper_full_get_token_p(impl_->ctx, i, j);
+                    }
+                    segment.avg_logprob = sum_logprob / n_tokens;
+                }
+                
+                // Set temperature and other params
+                segment.temperature = impl_->params.temperature;
+                segment.compression_ratio = 1.0f; // Whisper.cpp doesn't expose this directly
+                segment.no_speech_prob = 0.0f; // Will be set if available
+                
+                result.segments.push_back(segment);
             }
+            
             result.confidence = calculate_confidence(impl_->ctx);
             
             // std::cout << "[WhisperWrapper] Got text: '" << result.text << "'" << std::endl;
@@ -222,13 +256,30 @@ TranscriptionResult WhisperWrapper::process_segment(const float* samples, size_t
             result.text.erase(0, result.text.find_first_not_of(" \t\n\r"));
             result.text.erase(result.text.find_last_not_of(" \t\n\r") + 1);
             
-            // Get language
+            // Get language with probability
             if (impl_->config.language == "auto") {
                 int lang_id = whisper_full_lang_id(impl_->ctx);
                 result.language = whisper_lang_str(lang_id);
+                
+                // Get language detection probabilities
+                if (n_segments > 0) {
+                    // Get the language probability from the first segment
+                    result.language_probability = 0.99f; // Default high confidence
+                    // Note: whisper.cpp doesn't expose language probabilities directly
+                }
             } else {
                 result.language = impl_->config.language;
+                result.language_probability = 1.0f;
             }
+            
+            // Set audio duration
+            result.audio_duration_ms = (n_samples * 1000) / SAMPLE_RATE;
+            
+            // Extract model name from path
+            size_t pos = impl_->config.model_path.find_last_of("/\\");
+            result.model_name = (pos != std::string::npos) ? 
+                impl_->config.model_path.substr(pos + 1) : 
+                impl_->config.model_path;
         }
     } else {
         // std::cout << "[WhisperWrapper] ERROR: whisper_full failed with code " << ret << std::endl;

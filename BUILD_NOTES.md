@@ -208,7 +208,50 @@ with RTSTTClient() as client:
     client.start_listening()
 ```
 
+## Configuration Management (2025-01-30)
+
+### Overview
+Implemented comprehensive runtime configuration management via IPC:
+
+### Features
+- **Get/Set Configuration**: Full config access and updates
+- **Live Updates**: Most settings apply without restart
+- **VAD Tuning**: All VAD parameters adjustable at runtime
+- **Model Switching**: Change models on the fly
+- **Performance Metrics**: Real-time performance monitoring
+- **Persistence**: Auto-save configuration changes
+
+### Implementation Details
+- Extended IPC command handler in `main.cpp`
+- Added configuration methods to `STTEngine`
+- Enhanced client libraries with config APIs
+- Added CLI commands for all settings
+
+### Usage Examples
+```bash
+# Get configuration
+rt-stt-cli get-config -j
+
+# Update VAD settings
+rt-stt-cli set-vad --start-threshold 1.1 --end-threshold 0.9
+
+# Switch models
+rt-stt-cli set-model models/ggml-medium.en.bin
+
+# Get performance metrics
+rt-stt-cli get-metrics
+
+# Full config update
+rt-stt-cli set-config '{"vad_config": {"speech_start_threshold": 1.05}}'
+```
+
+### Python API
+```python
+client.set_vad_config(speech_start_threshold=1.1)
+client.set_model_config(language='es')
+metrics = client.get_metrics()
+```
+
 ### Next Steps
-1. Full configuration management via IPC
-2. Core ML model optimization
-3. Implement partial results during speech
+1. Core ML model optimization
+2. Implement partial results during speech
