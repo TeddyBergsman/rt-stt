@@ -1,0 +1,3 @@
+[console_scripts]
+rt-stt-cli = rt_stt.cli:main
+rt-stt-client = rt_stt.__main__:main

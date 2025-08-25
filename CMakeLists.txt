@@ -141,8 +141,22 @@ if(APPLE)
     )
 endif()
 
+# CLI executable
+add_executable(rt-stt-cli
+    src/cli/rt-stt-cli.cpp
+)
+
+target_include_directories(rt-stt-cli PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/json/single_include
+)
+
+target_link_libraries(rt-stt-cli
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
 # Installation
-install(TARGETS rt-stt DESTINATION bin)
+install(TARGETS rt-stt rt-stt-cli DESTINATION bin)
 install(DIRECTORY scripts/ DESTINATION /Library/LaunchDaemons
         FILES_MATCHING PATTERN "*.plist")
 install(DIRECTORY config/ DESTINATION /usr/local/etc/rt-stt

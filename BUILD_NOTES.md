@@ -156,3 +156,59 @@ If audio is captured but no transcriptions appear:
 - **Buffer never fills**: Buffer size requirement too large
 - **No Whisper output**: Audio format issue or model problem
 - **Audio stats show max=0**: Microphone permission or device issue
+
+## CLI Tools Implementation (2025-01-30)
+
+### Overview
+Implemented comprehensive CLI tools for interacting with the RT-STT daemon:
+
+### C++ CLI Tool (`rt-stt-cli`)
+- Lightweight, fast command-line interface
+- Features:
+  - Stream transcriptions (default action)
+  - JSON and timestamp output formats
+  - Status checking and daemon control
+  - Language configuration
+- Built into CMakeLists.txt as separate executable
+- Minimal dependencies (only needs JSON library)
+
+### Python Client Library (`rt_stt`)
+- Full-featured client library with:
+  - `RTSTTClient` class with callbacks
+  - Auto-reconnect capability
+  - Context manager support
+  - Typed data models (TranscriptionResult, Status)
+  - Async event handling
+- Installation: `pip3 install ./python`
+
+### Python CLI Tool
+- Feature-rich command-line interface
+- Advanced features:
+  - Colored terminal output
+  - Live monitoring mode with statistics
+  - Multiple output formats
+  - Quiet mode for piping
+- Entry point: `rt-stt-cli` after installation
+
+### Usage Examples
+```bash
+# Stream transcriptions
+rt-stt-cli stream
+rt-stt-cli stream -t -j  # with timestamps as JSON
+
+# Control daemon
+rt-stt-cli pause
+rt-stt-cli resume
+rt-stt-cli status
+
+# Python library
+from rt_stt import RTSTTClient
+with RTSTTClient() as client:
+    client.on_transcription(lambda r: print(r.text))
+    client.start_listening()
+```
+
+### Next Steps
+1. Full configuration management via IPC
+2. Core ML model optimization
+3. Implement partial results during speech

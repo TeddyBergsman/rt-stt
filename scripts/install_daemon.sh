@@ -58,10 +58,12 @@ sudo mkdir -p /usr/local/share/rt-stt/models
 mkdir -p "$USER_HOME/Library/Application Support/rt-stt"
 mkdir -p "$USER_HOME/Library/Logs"
 
-# Copy binary
-echo "Installing binary..."
+# Copy binaries
+echo "Installing binaries..."
 sudo cp build/rt-stt /usr/local/bin/
+sudo cp build/rt-stt-cli /usr/local/bin/
 sudo chmod 755 /usr/local/bin/rt-stt
+sudo chmod 755 /usr/local/bin/rt-stt-cli
 
 # Copy models
 echo "Copying models..."
@@ -155,16 +157,15 @@ EOF
 
 sudo chmod 755 /usr/local/bin/rt-stt-ctl
 
-# Create Python client symlink
-if [ -f "examples/python_client.py" ]; then
-    echo "Installing Python client..."
-    sudo cp examples/python_client.py /usr/local/bin/rt-stt-client
-    sudo chmod 755 /usr/local/bin/rt-stt-client
-    
-    # Add shebang if not present
-    if ! head -1 /usr/local/bin/rt-stt-client | grep -q "^#!/usr/bin/env python3"; then
-        sudo sed -i '' '1s/^/#!/usr/bin/env python3\n/' /usr/local/bin/rt-stt-client
-    fi
+# Install Python package
+echo "Installing Python client library..."
+if [ -d "python" ]; then
+    cd python
+    pip3 install --user .
+    cd ..
+    echo "Python client library installed"
+else
+    echo -e "${YELLOW}Warning: Python client library not found${NC}"
 fi
 
 echo ""
@@ -172,7 +173,7 @@ echo -e "${GREEN}Installation complete!${NC}"
 echo ""
 echo "RT-STT daemon has been installed and started."
 echo ""
-echo "Commands:"
+echo "Control Commands:"
 echo "  rt-stt-ctl start    - Start the daemon"
 echo "  rt-stt-ctl stop     - Stop the daemon"
 echo "  rt-stt-ctl restart  - Restart the daemon"
@@ -180,8 +181,12 @@ echo "  rt-stt-ctl status   - Check daemon status"
 echo "  rt-stt-ctl logs     - View logs"
 echo "  rt-stt-ctl errors   - View error logs"
 echo ""
-echo "Python client:"
-echo "  rt-stt-client       - Connect to the daemon"
+echo "CLI Tools:"
+echo "  rt-stt-cli          - C++ command-line client"
+echo "  rt-stt-cli stream   - Stream transcriptions"
+echo "  rt-stt-cli status   - Get daemon status"
+echo "  rt-stt-cli pause    - Pause listening"
+echo "  rt-stt-cli resume   - Resume listening"
 echo ""
 echo "Configuration file:"
 echo "  $CONFIG_FILE"
